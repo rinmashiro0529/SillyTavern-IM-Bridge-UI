@@ -1,0 +1,12 @@
+{
+  "display_name": "IM Bridge",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Rin",
+  "version": "0.1.0",
+  "auto_update": true,
+  "homePage": "https://github.com/rinmashiro0529/SillyTavern-IM-Bridge-UI"
+}
