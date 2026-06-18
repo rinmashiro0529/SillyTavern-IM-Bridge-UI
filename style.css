@@ -15,3 +15,6 @@
 .imb-list-item .grow { flex: 1; }
 .imb-tab-bar { display: flex; gap: 4px; margin: 8px 0; }
 .imb-tab-bar button.active { background: var(--SmartThemeQuoteColor, #4a8); color: #fff; }
+.imb-bind-code { font-family: monospace; font-size: 1.5em; letter-spacing: 0.25em; padding: 4px 8px; background: #00000033; border-radius: 4px; user-select: all; }
+.imb-bind-hint { font-size: 0.9em; opacity: 0.85; margin: 4px 0; }
+.imb-bind-empty { font-size: 0.9em; opacity: 0.7; }

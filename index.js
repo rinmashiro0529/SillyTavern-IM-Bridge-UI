@@ -96,8 +96,6 @@ function renderStatusChip(status) {
 function buildPersonalTab(account, onMutate) {
   const root = el("div", { class: "imb-section" });
   const tokenInput = el("input", { type: "password", placeholder: "Telegram Bot Token (xxxxx:yyyyy)" });
-  const allowedInput = el("textarea", { rows: "4", placeholder: "每行一个 Telegram 用户 ID（必须配置非空才会放行）" });
-  allowedInput.value = (account.allowedUserIds || []).join("\n");
   const statusBox = el("div", {}, "状态：", renderStatusChip(account.botStatus));
   const usernameBox = el("div", {}, account.botUsername ? `Username: @${account.botUsername}` : "");
   const lastErrorBox = el("div", { class: "imb-error" }, account.lastError || "");
@@ -136,23 +134,91 @@ function buildPersonalTab(account, onMutate) {
     } catch (e) { showToast("error", e.message); }
   } }, "停止");
 
-  const saveAllowedBtn = el("button", { class: "menu_button", onclick: async () => {
-    try {
-      const userIds = allowedInput.value.split("\n").map((s) => s.trim()).filter(Boolean);
-      await api("PUT", `/admin/accounts/${account.handle}/allowed-users`, { userIds });
-      showToast("success", `已保存白名单（${userIds.length} 人）`);
-      onMutate?.();
-    } catch (e) { showToast("error", e.message); }
-  } }, "保存白名单");
-
   root.appendChild(el("h3", {}, `Telegram Bot - ${account.handle} (${account.role})`));
   root.appendChild(el("div", { class: "imb-row" }, el("label", {}, "当前 Token"), document.createTextNode(account.tokenPreview || "（未设置）")));
   root.appendChild(el("div", { class: "imb-row" }, el("label", {}, "新 Token"), tokenInput, saveTokenBtn, clearTokenBtn));
   root.appendChild(el("div", { class: "imb-row" }, el("label", {}, "运行状态"), statusBox, startBtn, stopBtn));
   root.appendChild(usernameBox);
-  root.appendChild(el("div", { class: "imb-row" }, el("label", {}, "允许的 TG 用户"), allowedInput, saveAllowedBtn));
+  root.appendChild(buildBindSection(account, onMutate));
   root.appendChild(lastErrorBox);
   return root;
+}
+
+function buildBindSection(account, onMutate) {
+  const wrap = el("div", { class: "imb-section" });
+  wrap.appendChild(el("h3", {}, "TG 绑定"));
+  wrap.appendChild(el("div", { class: "imb-bind-hint" },
+    "在 Telegram 私聊该 bot 发送 ",
+    el("code", {}, "/bind <验证码>"),
+    "，验证码 5 分钟内有效；绑定成功后该号可直接使用所有命令。"));
+
+  const codeBox = el("div", { class: "imb-row" });
+  const codeDisplay = el("span", { class: "imb-bind-empty" }, "暂无活跃验证码");
+  codeBox.appendChild(codeDisplay);
+
+  let countdownTimer = null;
+  function setCode(payload) {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (!payload) {
+      codeDisplay.className = "imb-bind-empty";
+      codeDisplay.textContent = "暂无活跃验证码";
+      return;
+    }
+    const expiresMs = new Date(payload.expiresAt).getTime();
+    const tick = () => {
+      const remain = Math.max(0, Math.floor((expiresMs - Date.now()) / 1000));
+      if (remain <= 0) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        codeDisplay.className = "imb-bind-empty";
+        codeDisplay.textContent = "验证码已过期";
+        return;
+      }
+      codeDisplay.className = "";
+      codeDisplay.innerHTML = "";
+      codeDisplay.appendChild(el("span", { class: "imb-bind-code" }, payload.code));
+      codeDisplay.appendChild(document.createTextNode(`  剩余 ${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, "0")}`));
+    };
+    tick();
+    countdownTimer = setInterval(tick, 1000);
+  }
+
+  const generateBtn = el("button", { class: "menu_button", onclick: async () => {
+    try {
+      const result = await api("POST", `/admin/accounts/${account.handle}/bind-code`);
+      setCode(result);
+      showToast("success", "已生成绑定验证码");
+    } catch (e) { showToast("error", e.message); }
+  } }, "生成绑定码");
+
+  codeBox.appendChild(generateBtn);
+  wrap.appendChild(codeBox);
+
+  // Try fetching active code on render (404 == no active)
+  api("GET", `/admin/accounts/${account.handle}/bind-code`)
+    .then(setCode)
+    .catch((e) => { if (e.status !== 404) console.warn("[IM Bridge] active code lookup failed:", e); });
+
+  wrap.appendChild(el("h3", { style: "margin-top:12px;" }, "已绑定的 TG 用户"));
+  const list = el("div");
+  if (!account.allowedUserIds || account.allowedUserIds.length === 0) {
+    list.appendChild(el("div", { class: "imb-bind-empty" }, "尚无绑定用户"));
+  } else {
+    for (const id of account.allowedUserIds) {
+      const item = el("div", { class: "imb-list-item" },
+        el("span", { class: "grow" }, String(id)),
+        el("button", { class: "menu_button", onclick: async () => {
+          try {
+            await api("DELETE", `/admin/accounts/${account.handle}/allowed-users/${encodeURIComponent(id)}`);
+            showToast("success", `已解绑 ${id}`);
+            onMutate?.();
+          } catch (e) { showToast("error", e.message); }
+        } }, "解绑"));
+      list.appendChild(item);
+    }
+  }
+  wrap.appendChild(list);
+  return wrap;
 }
 
 function buildCompressTab(account, onMutate) {
