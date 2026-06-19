@@ -2,6 +2,8 @@
 
 SillyTavern UI 扩展，作为 [SillyTavern-IM-Bridge](https://github.com/rinmashiro0529/SillyTavern-IM-Bridge) server plugin 的前端控制面板。
 
+> 完整项目交接文档：server plugin 仓库根目录的 `PROJECT_HANDOVER.md`
+
 ## 安装
 
 1. 先按 server plugin 仓库 README 安装并启用 `st-im-bridge`。
@@ -9,14 +11,31 @@ SillyTavern UI 扩展，作为 [SillyTavern-IM-Bridge](https://github.com/rinmas
    ```
    https://github.com/rinmashiro0529/SillyTavern-IM-Bridge-UI.git
    ```
-3. 刷新 ST 网页 → 在「Extensions」抽屉中找到「IM Bridge」。
+3. 刷新 ST 网页 → 在「Extensions」抽屉中找到「IM Bridge」并展开。
+
+> manifest 的 `auto_update: true` **只在 ST 容器/进程启动时**对 server plugin 生效，对放在 `data/<handle>/extensions/` 下的 UI 扩展并不会随浏览器刷新自动 git pull。如果需要拉新版本，参见 `PROJECT_HANDOVER.md` 坑点 1（手动 `git fetch + git reset --hard origin/main` + 浏览器 `Ctrl+Shift+R` 硬刷新）。
 
 ## 功能
 
-- **个人 Bot** 管理：填写 Telegram Bot Token、允许列表、启停按钮、状态指示。
+- **个人 Bot**：填写 Telegram Bot Token、启停按钮、状态/Username/最新错误。
+- **TG 绑定**：网页内点「生成绑定码」获取 6 位短码（5 分钟内 mm:ss 倒计时），用户在 Telegram 私聊 bot 发送 `/bind <code>` 即可把自己的 numeric ID 加入白名单。已绑定列表中每个用户带「解绑」按钮。
 - **压缩配置**：调整 keepRecent / batchSize / timeoutMs / retryCount / retryDelayMs。
-- **管理员视图**（admin 用户可见）：跨账号查看与启停。
+- **管理员视图**（admin 用户可见）：跨账号查看与启停他人 bot。
 
-## 探测
+## 探测与降级
 
-打开扩展面板时会先 `GET /api/plugins/st-im-bridge/probe`；若插件未安装则显示安装提示，不抛出错误。
+展开「IM Bridge」抽屉时，扩展会先 `GET /api/plugins/st-im-bridge/probe`：
+- 返回 204 → 正常渲染主面板。
+- 任何失败（404 / 网络错误 / 插件未启用）→ 渲染「IM Bridge 服务端插件未安装」提示页（含 `enableServerPlugins: true` 与 `git clone` 步骤），不抛异常、不影响其他扩展。
+
+抽屉关闭时不发任何请求；`probe()` 仅在抽屉首次展开时跑一次。
+
+## 数据流
+
+写操作经 `api(method, path, body)` 工具函数：
+1. 自动 `GET /csrf-token` 缓存 token。
+2. 写请求带 `x-csrf-token` 头与 `credentials: same-origin`。
+3. 收到 `403` 且响应含 `csrf` 字样 → 清缓存重试 1 次。
+4. 错误统一通过 `toastr.error` 弹窗提示。
+
+SSE 路由（`/messages/send-stream`、`/messages/redo-stream`、`/compress/run`）由 server 端推送 `started` / `delta` / `progress` / `done` / `error` 事件，UI 实时更新进度。
